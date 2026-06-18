@@ -1,9 +1,13 @@
 venv/
-expense_tracker.db
+.venv/
 __pycache__/
 *.pyc
 *.pyo
 .env
 .DS_Store
+*.db
+spendly.db
+expense_tracker.db
 .claude/plans/
-.claude
+seed_expense_script.py
+seed_user_script.py
