@@ -9,3 +9,5 @@ __pycache__/
 spendly.db
 expense_tracker.db
 .claude/plans/
+seed_expense_script.py
+seed_user_script.py
