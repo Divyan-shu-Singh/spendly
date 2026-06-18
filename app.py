@@ -1,8 +1,14 @@
-from flask import Flask, render_template
+import sqlite3
+
+from flask import Flask, redirect, render_template, request, session, url_for
+from werkzeug.security import generate_password_hash
 
 from database.db import get_db, init_db, seed_db
 
 app = Flask(__name__)
+# Placeholder secret key for development. Real key wiring is out of scope
+# for this step; replace with a secure, environment-sourced value later.
+app.secret_key = "dev-only-change-me"
 
 
 # ------------------------------------------------------------------ #
@@ -14,9 +20,71 @@ def landing():
     return render_template("landing.html")
 
 
-@app.route("/register")
+@app.route("/register", methods=["GET", "POST"])
 def register():
-    return render_template("register.html")
+    """Render the registration form (GET) or create a new user (POST)."""
+    if request.method == "POST":
+        # Read and trim submitted fields.
+        name = (request.form.get("name") or "").strip()
+        email = (request.form.get("email") or "").strip()
+        password = request.form.get("password") or ""
+
+        # Validate in order; return the first failure with the form re-rendered.
+        if not (1 <= len(name) <= 80):
+            return _render_register_form(
+                error="Please enter your name (1-80 characters).",
+                name=name,
+                email=email,
+            )
+        if "@" not in email or "." not in email or len(email) > 120:
+            return _render_register_form(
+                error="Please enter a valid email address.",
+                name=name,
+                email=email,
+            )
+        if len(password) < 8:
+            return _render_register_form(
+                error="Password must be at least 8 characters.",
+                name=name,
+                email=email,
+            )
+
+        email_normalized = email.lower()
+        password_hash = generate_password_hash(password)
+
+        conn = get_db()
+        try:
+            try:
+                cursor = conn.execute(
+                    "INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)",
+                    (name, email_normalized, password_hash),
+                )
+                conn.commit()
+            except sqlite3.IntegrityError:
+                return _render_register_form(
+                    error="An account with that email already exists.",
+                    name=name,
+                    email=email,
+                )
+
+            session["user_id"] = cursor.lastrowid
+        finally:
+            conn.close()
+
+        return redirect(url_for("dashboard"))
+
+    # GET: render an empty form.
+    return _render_register_form()
+
+
+def _render_register_form(error: str | None = None, name: str = "", email: str = ""):
+    """Helper that renders register.html with optional error and preserved input."""
+    return render_template(
+        "register.html",
+        error=error,
+        name=name,
+        email=email,
+    )
 
 
 @app.route("/login")
@@ -41,6 +109,15 @@ def privacy():
 @app.route("/logout")
 def logout():
     return "Logout — coming in Step 3"
+
+
+# TODO: replace inline guard with a @login_required decorator in a later step.
+@app.route("/dashboard")
+def dashboard():
+    """Placeholder dashboard — requires a logged-in session."""
+    if not session.get("user_id"):
+        return redirect(url_for("login"))
+    return "Dashboard — coming in Step 5"
 
 
 @app.route("/profile")
