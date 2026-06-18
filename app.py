@@ -1,7 +1,7 @@
 import sqlite3
 
-from flask import Flask, redirect, render_template, request, session, url_for
-from werkzeug.security import generate_password_hash
+from flask import Flask, g, redirect, render_template, request, session, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from database.db import get_db, init_db, seed_db
 
@@ -9,6 +9,32 @@ app = Flask(__name__)
 # Placeholder secret key for development. Real key wiring is out of scope
 # for this step; replace with a secure, environment-sourced value later.
 app.secret_key = "dev-only-change-me"
+
+
+# ------------------------------------------------------------------ #
+# Request hooks                                                       #
+# ------------------------------------------------------------------ #
+
+@app.before_request
+def _load_current_user():
+    """Look up the logged-in user (by id) once per request for templates.
+
+    Populates flask.g.current_user (a sqlite3.Row or None) so base.html
+    can show the user's name in the nav without each route re-querying.
+    Safe when no user is logged in — leaves g.current_user as None.
+    """
+    user_id = session.get("user_id")
+    g.current_user = None
+    if user_id is None:
+        return
+    conn = get_db()
+    try:
+        g.current_user = conn.execute(
+            "SELECT id, name, email FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+    finally:
+        conn.close()
 
 
 # ------------------------------------------------------------------ #
@@ -87,9 +113,59 @@ def _render_register_form(error: str | None = None, name: str = "", email: str =
     )
 
 
-@app.route("/login")
+def _render_login_form(error: str | None = None, email: str = ""):
+    """Helper that renders login.html with optional error and preserved email."""
+    return render_template(
+        "login.html",
+        error=error,
+        email=email,
+    )
+
+
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    return render_template("login.html")
+    """Render the login form (GET) or authenticate (POST)."""
+    if request.method == "POST":
+        # Read and trim submitted fields.
+        email = (request.form.get("email") or "").strip()
+        password = request.form.get("password") or ""
+
+        # Validate in order; return the first failure with the form re-rendered.
+        if "@" not in email or "." not in email or len(email) > 120:
+            return _render_login_form(
+                error="Please enter a valid email address.",
+                email=email,
+            )
+        if not password:
+            return _render_login_form(
+                error="Please enter your password.",
+                email=email,
+            )
+
+        email_normalized = email.lower()
+
+        conn = get_db()
+        try:
+            row = conn.execute(
+                "SELECT id, password_hash FROM users WHERE email = ?",
+                (email_normalized,),
+            ).fetchone()
+
+            # Generic error: do NOT leak whether the email exists.
+            if row is None or not check_password_hash(row["password_hash"], password):
+                return _render_login_form(
+                    error="Invalid email or password.",
+                    email=email,
+                )
+
+            session["user_id"] = row["id"]
+        finally:
+            conn.close()
+
+        return redirect(url_for("dashboard"))
+
+    # GET: render an empty form.
+    return _render_login_form()
 
 
 @app.route("/terms")
@@ -108,7 +184,9 @@ def privacy():
 
 @app.route("/logout")
 def logout():
-    return "Logout — coming in Step 3"
+    """Clear the session and redirect to /login. Idempotent."""
+    session.clear()
+    return redirect(url_for("login"))
 
 
 # TODO: replace inline guard with a @login_required decorator in a later step.
