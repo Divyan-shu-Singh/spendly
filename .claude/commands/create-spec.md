@@ -125,7 +125,7 @@ Title:     <feature_title>
 ```
 
 Then tell the user:
-"Review the spec at `.claude/specs/<step_number>-<feature_slug>.md`
+"Review the spec at `.claude/specs/<step_number>-<feature_slug>.md` 
 then enter Plan Mode with Shift+Tab twice to begin implementation."
 
 Do not print the full spec in chat unless explicitly asked.
